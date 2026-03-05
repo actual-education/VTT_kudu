@@ -1,0 +1,52 @@
+[
+  {
+    "timestamp": 5.0,
+    "has_text": false,
+    "has_diagram": false,
+    "has_equation": false,
+    "likely_essential": false,
+    "ocr_text": "",
+    "description": "Instructor standing at podium with title slide visible.",
+    "confidence": 0.92
+  },
+  {
+    "timestamp": 25.0,
+    "has_text": true,
+    "has_diagram": true,
+    "has_equation": false,
+    "likely_essential": true,
+    "ocr_text": "Vector Addition: A + B = C",
+    "description": "Whiteboard showing vector addition diagram with arrows for vectors A and B forming a triangle with resultant vector C.",
+    "confidence": 0.88
+  },
+  {
+    "timestamp": 48.0,
+    "has_text": true,
+    "has_diagram": false,
+    "has_equation": true,
+    "likely_essential": true,
+    "ocr_text": "C[i][j] = Σ A[i][k] * B[k][j]",
+    "description": "Whiteboard with matrix multiplication formula written in mathematical notation.",
+    "confidence": 0.85
+  },
+  {
+    "timestamp": 70.0,
+    "has_text": true,
+    "has_diagram": false,
+    "has_equation": false,
+    "likely_essential": true,
+    "ocr_text": "Algorithm Complexity Comparison\nBrute Force: O(n³)\nStrassen: O(n^2.807)\nCoppersmith-Winograd: O(n^2.376)",
+    "description": "Bar chart comparing computational complexity of matrix multiplication algorithms.",
+    "confidence": 0.90
+  },
+  {
+    "timestamp": 95.0,
+    "has_text": true,
+    "has_diagram": false,
+    "has_equation": false,
+    "likely_essential": false,
+    "ocr_text": "Summary\n- Vectors\n- Matrices\n- Multiplication",
+    "description": "Summary slide listing key topics covered in the lecture.",
+    "confidence": 0.95
+  }
+]

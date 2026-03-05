@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(alembic init:*)",
+      "Bash(npx create-next-app:*)",
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(chmod:*)",
+      "Bash(python -c:*)",
+      "Bash(npx next build)",
+      "Bash(python -m pytest:*)"
+    ]
+  }
+}

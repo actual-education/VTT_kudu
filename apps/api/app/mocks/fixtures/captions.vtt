@@ -1,0 +1,31 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:05.000
+welcome to introduction to linear algebra
+
+00:00:05.000 --> 00:00:12.000
+today we're going to cover the basics of vectors and matrices
+
+00:00:12.000 --> 00:00:20.000
+a vector is an element of a vector space it has both magnitude and direction
+
+00:00:20.000 --> 00:00:30.000
+let's look at this diagram on the board showing vector addition
+
+00:00:30.000 --> 00:00:42.000
+as you can see when we add vector a plus vector b we get the resultant vector
+
+00:00:42.000 --> 00:00:55.000
+now let me write the equation for matrix multiplication
+
+00:00:55.000 --> 00:01:10.000
+the formula shown here demonstrates how each element is computed
+
+00:01:10.000 --> 00:01:25.000
+this chart compares the performance of different algorithms
+
+00:01:25.000 --> 00:01:40.000
+notice how the complexity grows as the matrix size increases
+
+00:01:40.000 --> 00:01:55.000
+let's summarize what we learned today about linear algebra fundamentals
