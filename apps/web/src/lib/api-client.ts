@@ -215,6 +215,8 @@ export const api = {
 
   // Export
   exportVttUrl: (videoId: string) => `${API_BASE}/videos/${videoId}/export/vtt`,
+  exportOriginalVttUrl: (videoId: string) => `${API_BASE}/videos/${videoId}/export/vtt/original`,
+  exportVisualDescriptionsVttUrl: (videoId: string) => `${API_BASE}/videos/${videoId}/export/vtt/descriptions`,
   exportReportUrl: (videoId: string) => `${API_BASE}/videos/${videoId}/export/report`,
 
   validateUpload: (videoId: string) =>

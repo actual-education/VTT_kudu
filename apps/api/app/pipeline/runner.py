@@ -22,10 +22,10 @@ from app.pipeline.steps import (
     step_analyze_frames_vision,
     step_align_segments,
     step_score_risk,
-    step_generate_descriptions,
     step_compute_compliance,
     step_finalize,
 )
+from app.services.description_service import description_service
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,44 @@ def _update_job(db: Session, job_id: str, step: str, progress: int, status: str 
         job.current_step = step
         job.progress = progress
         db.commit()
+
+
+def _vision_progress_updater(db: Session, job_id: str):
+    progress_start = 55
+    progress_end = 85
+
+    def _update(completed: int, total: int):
+        if total <= 0:
+            return
+        span = progress_end - progress_start
+        progress = progress_start + int((completed / total) * span)
+        _update_job(
+            db,
+            job_id,
+            f"analyze_frames_vision ({completed}/{total})",
+            min(progress, progress_end),
+        )
+
+    return _update
+
+
+def _description_progress_updater(db: Session, job_id: str):
+    progress_start = 85
+    progress_end = 92
+
+    def _update(completed: int, total: int):
+        if total <= 0:
+            return
+        span = progress_end - progress_start
+        progress = progress_start + int((completed / total) * span)
+        _update_job(
+            db,
+            job_id,
+            f"generate_descriptions ({completed}/{total})",
+            min(progress, progress_end),
+        )
+
+    return _update
 
 
 def _format_job_summary(score: float, duration_seconds: float) -> str:
@@ -106,7 +144,14 @@ async def run_pipeline(job_id: str, video_id: str):
 
         # Step 6: Analyze frames (vision)
         _update_job(db, job_id, "analyze_frames_vision", 55)
-        await asyncio.to_thread(step_analyze_frames_vision, video, frames, analyses, db)
+        await asyncio.to_thread(
+            step_analyze_frames_vision,
+            video,
+            frames,
+            analyses,
+            db,
+            _vision_progress_updater(db, job_id),
+        )
 
         # Step 7: Align segments
         _update_job(db, job_id, "align_segments", 65)
@@ -118,7 +163,14 @@ async def run_pipeline(job_id: str, video_id: str):
 
         # Step 9: Generate descriptions
         _update_job(db, job_id, "generate_descriptions", 85)
-        await asyncio.to_thread(step_generate_descriptions, video, segments, db)
+        await asyncio.to_thread(
+            description_service.generate_for_video,
+            video.id,
+            db,
+            _description_progress_updater(db, job_id),
+        )
+        await asyncio.to_thread(description_service.generate_caption_draft, video.id, db)
+        await asyncio.to_thread(step_score_risk, video, segments, db)
 
         # Step 10: Compute compliance
         _update_job(db, job_id, "compute_compliance", 92)

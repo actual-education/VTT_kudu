@@ -81,6 +81,7 @@ class VisionService:
 
         completion = client.chat.completions.create(
             model=model,
+            timeout=settings.MODEL_REQUEST_TIMEOUT_SECONDS,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": "You are an accessibility analysis assistant."},
@@ -116,12 +117,18 @@ class VisionService:
                 azure_endpoint=endpoint,
                 api_key=settings.AZURE_OPENAI_API_KEY,
                 api_version=settings.AZURE_OPENAI_API_VERSION,
+                timeout=settings.MODEL_REQUEST_TIMEOUT_SECONDS,
+                max_retries=settings.MODEL_MAX_RETRIES,
             )
             self._model = settings.AZURE_OPENAI_DEPLOYMENT
             return self._client, self._model
 
         if settings.OPENAI_API_KEY:
-            kwargs = {"api_key": settings.OPENAI_API_KEY}
+            kwargs = {
+                "api_key": settings.OPENAI_API_KEY,
+                "timeout": settings.MODEL_REQUEST_TIMEOUT_SECONDS,
+                "max_retries": settings.MODEL_MAX_RETRIES,
+            }
             if settings.OPENAI_BASE_URL:
                 kwargs["base_url"] = settings.OPENAI_BASE_URL
             self._client = OpenAI(**kwargs)

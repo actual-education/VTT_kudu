@@ -9,6 +9,8 @@ from app.utils.srt_parser import parse_srt
 
 
 class CaptionService:
+    _MICRO_CUE_MAX_DURATION_SECONDS = 0.12
+
     def ingest(self, content: str, video_id: str, db: Session) -> CaptionVersion:
         """Parse raw caption content (VTT or SRT) and store as raw_auto version."""
         content_stripped = content.strip()
@@ -126,6 +128,60 @@ class CaptionService:
         )
         return latest.vtt_content if latest else None
 
+    def get_original_vtt(self, video_id: str, db: Session) -> str | None:
+        source_version = (
+            db.query(CaptionVersion)
+            .filter(
+                CaptionVersion.video_id == video_id,
+                CaptionVersion.label == "raw_auto",
+            )
+            .order_by(CaptionVersion.version_number.desc())
+            .first()
+        )
+        if source_version:
+            return self._dedupe_progressive_vtt(source_version.vtt_content)
+        source_version = (
+            db.query(CaptionVersion)
+            .filter(
+                CaptionVersion.video_id == video_id,
+                CaptionVersion.label == "enhanced",
+            )
+            .order_by(CaptionVersion.version_number.desc())
+            .first()
+        )
+        if source_version:
+            return self._dedupe_progressive_vtt(source_version.vtt_content)
+        latest = self.get_latest_vtt(video_id, db)
+        return self._dedupe_progressive_vtt(latest) if latest else None
+
+    def get_visual_descriptions_vtt(self, video_id: str, db: Session) -> str | None:
+        from app.models.segment import Segment
+
+        segments = (
+            db.query(Segment)
+            .filter(
+                Segment.video_id == video_id,
+                Segment.ai_suggestion.isnot(None),
+            )
+            .order_by(Segment.start_time)
+            .all()
+        )
+        if not segments:
+            return None
+
+        cues = [
+            VttCue(
+                start_time=segment.start_time,
+                end_time=segment.end_time,
+                text=segment.ai_suggestion.strip(),
+            )
+            for segment in segments
+            if (segment.ai_suggestion or "").strip()
+        ]
+        if not cues:
+            return None
+        return generate_vtt(cues)
+
     def get_versions(self, video_id: str, db: Session) -> list[CaptionVersion]:
         return (
             db.query(CaptionVersion)
@@ -137,6 +193,100 @@ class CaptionService:
     def validate(self, vtt_content: str) -> list[str]:
         cues = parse_vtt(vtt_content)
         return validate_vtt(cues)
+
+    def _dedupe_progressive_vtt(self, vtt_content: str) -> str:
+        cues = parse_vtt(vtt_content)
+        if not cues:
+            return vtt_content
+
+        cleaned: list[VttCue] = []
+        for cue in cues:
+            text = self._normalize_caption_text(cue.text)
+            if not text:
+                continue
+
+            current = VttCue(
+                start_time=cue.start_time,
+                end_time=cue.end_time,
+                text=text,
+                identifier=cue.identifier,
+            )
+
+            if not cleaned:
+                cleaned.append(current)
+                continue
+
+            previous = cleaned[-1]
+            current_duration = current.end_time - current.start_time
+
+            if self._is_micro_duplicate(previous.text, current.text, current_duration):
+                continue
+
+            trimmed_text = self._trim_repeated_prefix(previous.text, current.text)
+            if trimmed_text:
+                current.text = trimmed_text
+
+            if current.text == previous.text:
+                previous.end_time = max(previous.end_time, current.end_time)
+                continue
+
+            cleaned.append(current)
+
+        return generate_vtt(cleaned)
+
+    def _normalize_caption_text(self, text: str) -> str:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return "\n".join(lines).strip()
+
+    def _is_micro_duplicate(self, previous_text: str, current_text: str, duration: float) -> bool:
+        if duration > self._MICRO_CUE_MAX_DURATION_SECONDS:
+            return False
+        prev_words = self._words(previous_text)
+        curr_words = self._words(current_text)
+        if not prev_words or not curr_words:
+            return False
+        return self._is_subsequence(curr_words, prev_words)
+
+    def _trim_repeated_prefix(self, previous_text: str, current_text: str) -> str:
+        prev_words = self._words(previous_text)
+        curr_words = self._words(current_text)
+        overlap = self._overlap_word_count(prev_words, curr_words)
+        if overlap <= 0:
+            return current_text
+
+        trimmed = self._drop_leading_words(current_text, overlap)
+        if not trimmed:
+            return current_text
+        return trimmed
+
+    def _overlap_word_count(self, previous_words: list[str], current_words: list[str]) -> int:
+        max_overlap = min(len(previous_words), len(current_words))
+        for size in range(max_overlap, 0, -1):
+            if previous_words[-size:] == current_words[:size]:
+                return size
+        return 0
+
+    def _is_subsequence(self, needle: list[str], haystack: list[str]) -> bool:
+        if len(needle) > len(haystack):
+            return False
+        for start in range(len(haystack) - len(needle) + 1):
+            if haystack[start:start + len(needle)] == needle:
+                return True
+        return False
+
+    def _words(self, text: str) -> list[str]:
+        return re.findall(r"[a-z0-9']+", text.lower())
+
+    def _drop_leading_words(self, text: str, word_count: int) -> str:
+        if word_count <= 0:
+            return text
+
+        matches = list(re.finditer(r"[A-Za-z0-9']+", text))
+        if len(matches) <= word_count:
+            return ""
+
+        start_index = matches[word_count].start()
+        return text[start_index:].strip()
 
 
 caption_service = CaptionService()

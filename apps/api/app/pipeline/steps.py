@@ -1,5 +1,6 @@
 import logging
 import re
+from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
@@ -164,9 +165,16 @@ def step_analyze_frames_ocr(video: Video, frames: list[dict], db: Session) -> li
     return analyses
 
 
-def step_analyze_frames_vision(video: Video, frames: list[dict], analyses: list[FrameAnalysis], db: Session) -> None:
+def step_analyze_frames_vision(
+    video: Video,
+    frames: list[dict],
+    analyses: list[FrameAnalysis],
+    db: Session,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> None:
     """Step 6: Run vision classification on frames."""
-    for frame, fa in zip(frames, analyses):
+    total = len(frames)
+    for index, (frame, fa) in enumerate(zip(frames, analyses), start=1):
         vision = vision_service.analyze_frame(frame["path"], frame["timestamp"])
         fa.has_diagram = vision.get("has_diagram", False)
         fa.has_equation = vision.get("has_equation", False)
@@ -178,6 +186,8 @@ def step_analyze_frames_vision(video: Video, frames: list[dict], analyses: list[
             fa.has_text = True
         if vision.get("ocr_text") and not fa.ocr_text:
             fa.ocr_text = vision["ocr_text"]
+        if progress_callback:
+            progress_callback(index, total)
     db.commit()
 
 

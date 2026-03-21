@@ -37,6 +37,44 @@ def export_vtt(video_id: str, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/vtt/original")
+def export_original_vtt(video_id: str, db: Session = Depends(get_db)):
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    vtt = caption_service.get_original_vtt(video_id, db)
+    if not vtt:
+        raise HTTPException(status_code=404, detail="No original captions available")
+
+    return PlainTextResponse(
+        vtt,
+        media_type="text/vtt",
+        headers={
+            "Content-Disposition": f'attachment; filename="{video.youtube_id}_original_captions.vtt"'
+        },
+    )
+
+
+@router.get("/vtt/descriptions")
+def export_visual_descriptions_vtt(video_id: str, db: Session = Depends(get_db)):
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    vtt = caption_service.get_visual_descriptions_vtt(video_id, db)
+    if not vtt:
+        raise HTTPException(status_code=404, detail="No visual description captions available")
+
+    return PlainTextResponse(
+        vtt,
+        media_type="text/vtt",
+        headers={
+            "Content-Disposition": f'attachment; filename="{video.youtube_id}_visual_descriptions.vtt"'
+        },
+    )
+
+
 @router.get("/report")
 def export_report(video_id: str, db: Session = Depends(get_db)):
     video = db.query(Video).filter(Video.id == video_id).first()

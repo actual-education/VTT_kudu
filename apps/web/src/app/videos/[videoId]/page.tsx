@@ -70,6 +70,17 @@ export default function VideoDetailPage() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const isRunning = latestJob?.status === "queued" || latestJob?.status === "running" || video?.status === "scanning";
+    if (!isRunning) return;
+
+    const timer = setInterval(() => {
+      loadData();
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [latestJob?.status, loadData, video?.status]);
+
   // Player callbacks
   const handlePlayerReady = useCallback((player: YT.Player) => {
     playerRef.current = player;
@@ -252,11 +263,18 @@ export default function VideoDetailPage() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <a
-                  href={api.exportVttUrl(videoId)}
+                  href={api.exportOriginalVttUrl(videoId)}
                   download
                   className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
                 >
-                  Download VTT
+                  Original VTT
+                </a>
+                <a
+                  href={api.exportVisualDescriptionsVttUrl(videoId)}
+                  download
+                  className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                >
+                  Description VTT
                 </a>
                 <a
                   href={api.exportReportUrl(videoId)}

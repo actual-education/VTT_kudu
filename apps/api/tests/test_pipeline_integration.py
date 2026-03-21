@@ -149,6 +149,79 @@ class TestFullPipeline:
             if seg.ocr_text or seg.visual_description:
                 assert seg.ai_suggestion is not None
 
+    def test_vision_step_reports_incremental_progress(self, db, video, monkeypatch):
+        frames = [
+            {"timestamp": 0.0, "path": "/tmp/frame1.jpg"},
+            {"timestamp": 10.0, "path": "/tmp/frame2.jpg"},
+        ]
+        analyses = [
+            FrameAnalysis(video_id=video.id, timestamp=0.0),
+            FrameAnalysis(video_id=video.id, timestamp=10.0),
+        ]
+        for analysis in analyses:
+            db.add(analysis)
+        db.commit()
+
+        def fake_analyze_frame(frame_path: str, timestamp: float) -> dict:
+            return {
+                "has_text": True,
+                "has_diagram": False,
+                "has_equation": False,
+                "likely_essential": True,
+                "ocr_text": f"text at {timestamp}",
+                "description": f"description at {timestamp}",
+                "confidence": 0.9,
+            }
+
+        monkeypatch.setattr(
+            "app.pipeline.steps.vision_service.analyze_frame",
+            fake_analyze_frame,
+        )
+
+        progress_calls: list[tuple[int, int]] = []
+
+        step_analyze_frames_vision(
+            video,
+            frames,
+            analyses,
+            db,
+            progress_callback=lambda completed, total: progress_calls.append((completed, total)),
+        )
+
+        assert progress_calls == [(1, 2), (2, 2)]
+
+    def test_generate_descriptions_uses_template_mode_for_large_batches(self, db, video):
+        from app.services.description_service import description_service
+
+        created_segments = []
+        for index in range(35):
+            seg = Segment(
+                video_id=video.id,
+                start_time=float(index),
+                end_time=float(index + 1),
+                transcript_text="lecture transcript",
+                ocr_text=f"formula {index}",
+                visual_description="diagram on screen",
+                has_text=True,
+                risk_level="high",
+            )
+            db.add(seg)
+            created_segments.append(seg)
+        db.commit()
+
+        progress_calls: list[tuple[int, int]] = []
+        updated = description_service.generate_for_video(
+            video.id,
+            db,
+            progress_callback=lambda completed, total: progress_calls.append((completed, total)),
+        )
+
+        assert updated == 35
+        assert progress_calls[0] == (1, 35)
+        assert progress_calls[-1] == (35, 35)
+        refreshed = db.query(Segment).filter(Segment.video_id == video.id).all()
+        assert all(seg.ai_suggestion for seg in refreshed)
+
 
 class TestPreUploadValidation:
     def test_blocks_with_unreviewed_high_risk(self, db, video):

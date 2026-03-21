@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 
 from openai import AzureOpenAI, OpenAI
 from sqlalchemy.orm import Session
@@ -16,12 +17,14 @@ class DescriptionService:
         self._client = None
         self._model = ""
 
-    def generate_for_segment(self, segment: Segment) -> str | None:
+    def generate_for_segment(self, segment: Segment, template_only: bool = False) -> str | None:
         """Generate an audio description suggestion for a segment with visual content."""
         if settings.USE_MOCKS:
             return self._mock_generate(segment)
         if not self._segment_has_visual_context(segment):
             return None
+        if template_only:
+            return self._template_generate(segment)
 
         client, model = self._get_client()
         if not client or not model:
@@ -34,6 +37,7 @@ class DescriptionService:
         try:
             completion = client.chat.completions.create(
                 model=model,
+                timeout=settings.MODEL_REQUEST_TIMEOUT_SECONDS,
                 messages=[
                     {
                         "role": "system",
@@ -102,12 +106,18 @@ class DescriptionService:
                 azure_endpoint=endpoint,
                 api_key=settings.AZURE_OPENAI_API_KEY,
                 api_version=settings.AZURE_OPENAI_API_VERSION,
+                timeout=settings.MODEL_REQUEST_TIMEOUT_SECONDS,
+                max_retries=settings.MODEL_MAX_RETRIES,
             )
             self._model = settings.AZURE_OPENAI_DEPLOYMENT
             return self._client, self._model
 
         if settings.OPENAI_API_KEY:
-            kwargs = {"api_key": settings.OPENAI_API_KEY}
+            kwargs = {
+                "api_key": settings.OPENAI_API_KEY,
+                "timeout": settings.MODEL_REQUEST_TIMEOUT_SECONDS,
+                "max_retries": settings.MODEL_MAX_RETRIES,
+            }
             if settings.OPENAI_BASE_URL:
                 kwargs["base_url"] = settings.OPENAI_BASE_URL
             self._client = OpenAI(**kwargs)
@@ -122,7 +132,12 @@ class DescriptionService:
             return endpoint.split(marker, 1)[0].rstrip("/")
         return endpoint.rstrip("/")
 
-    def generate_for_video(self, video_id: str, db: Session) -> int:
+    def generate_for_video(
+        self,
+        video_id: str,
+        db: Session,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> int:
         """Generate descriptions for all high/medium risk segments. Returns count updated."""
         segments = (
             db.query(Segment)
@@ -134,15 +149,25 @@ class DescriptionService:
             .all()
         )
 
+        template_only = len(segments) > settings.DESCRIPTION_MODEL_MAX_SEGMENTS
         count = 0
-        for seg in segments:
-            suggestion = self.generate_for_segment(seg)
+        total = len(segments)
+        for index, seg in enumerate(segments, start=1):
+            suggestion = self.generate_for_segment(seg, template_only=template_only)
             if suggestion:
                 seg.ai_suggestion = suggestion
                 count += 1
+            db.commit()
+            if progress_callback:
+                progress_callback(index, total)
 
-        db.commit()
-        logger.info(f"Generated {count} AI descriptions for video {video_id}")
+        logger.info(
+            "Generated %s descriptions for video %s (template_only=%s, total_segments=%s)",
+            count,
+            video_id,
+            template_only,
+            total,
+        )
         return count
 
     def generate_caption_draft(self, video_id: str, db: Session) -> str | None:
