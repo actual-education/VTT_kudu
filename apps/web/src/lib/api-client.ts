@@ -107,6 +107,7 @@ export interface Segment {
   has_diagram: boolean;
   has_equation: boolean;
   risk_level: "low" | "medium" | "high" | null;
+  education_level: "low" | "high" | null;
   risk_reason: string | null;
   review_status: string;
 }
@@ -217,6 +218,8 @@ export const api = {
   exportVttUrl: (videoId: string) => `${API_BASE}/videos/${videoId}/export/vtt`,
   exportOriginalVttUrl: (videoId: string) => `${API_BASE}/videos/${videoId}/export/vtt/original`,
   exportVisualDescriptionsVttUrl: (videoId: string) => `${API_BASE}/videos/${videoId}/export/vtt/descriptions`,
+  exportHighEducationVisualDescriptionsVttUrl: (videoId: string) =>
+    `${API_BASE}/videos/${videoId}/export/vtt/descriptions/high`,
   exportReportUrl: (videoId: string) => `${API_BASE}/videos/${videoId}/export/report`,
 
   validateUpload: (videoId: string) =>

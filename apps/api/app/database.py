@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker, Session
 
 from app.config import settings
@@ -19,6 +19,20 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def ensure_schema_compat() -> None:
+    inspector = inspect(engine)
+    if "segments" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("segments")}
+    if "education_level" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE segments ADD COLUMN education_level VARCHAR"))
+        connection.execute(text("UPDATE segments SET education_level = 'low' WHERE education_level IS NULL"))
 
 
 def get_db() -> Session:

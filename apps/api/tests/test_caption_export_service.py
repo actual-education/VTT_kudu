@@ -60,7 +60,7 @@ def test_export_original_vtt_prefers_raw_auto_over_enhanced_version():
         db.close()
 
 
-def test_export_visual_descriptions_vtt_contains_only_ai_suggestions():
+def test_export_visual_descriptions_vtt_contains_curated_visual_descriptions():
     db = SessionLocal()
     try:
         video = Video(youtube_id="def456uvw99", title="Description Demo")
@@ -74,7 +74,8 @@ def test_export_visual_descriptions_vtt_contains_only_ai_suggestions():
                 start_time=1.0,
                 end_time=3.0,
                 transcript_text="Original caption",
-                ai_suggestion="[Visual: a chart rises sharply.]",
+                visual_description="[Visual: a chart rises sharply.]",
+                education_level="high",
                 risk_level="high",
             ),
             Segment(
@@ -82,7 +83,8 @@ def test_export_visual_descriptions_vtt_contains_only_ai_suggestions():
                 start_time=4.0,
                 end_time=6.0,
                 transcript_text="Another caption",
-                ai_suggestion=None,
+                visual_description=None,
+                education_level="low",
                 risk_level="low",
             ),
             Segment(
@@ -90,7 +92,8 @@ def test_export_visual_descriptions_vtt_contains_only_ai_suggestions():
                 start_time=7.0,
                 end_time=9.0,
                 transcript_text="Third caption",
-                ai_suggestion="[Visual: molecules collide.]",
+                visual_description="[Visual: molecules collide.]",
+                education_level="low",
                 risk_level="medium",
             ),
         ])
@@ -103,6 +106,103 @@ def test_export_visual_descriptions_vtt_contains_only_ai_suggestions():
         assert "Another caption" not in exported
         assert "[Visual: a chart rises sharply.]" in exported
         assert "[Visual: molecules collide.]" in exported
+    finally:
+        db.close()
+
+
+def test_export_high_education_visual_descriptions_vtt_filters_to_high_only():
+    db = SessionLocal()
+    try:
+        video = Video(youtube_id="edu999high11", title="Education Filter Demo")
+        db.add(video)
+        db.commit()
+        db.refresh(video)
+
+        db.add_all([
+            Segment(
+                video_id=video.id,
+                start_time=1.0,
+                end_time=3.0,
+                visual_description="[Visual: electric field arrows point outward.]",
+                education_level="high",
+            ),
+            Segment(
+                video_id=video.id,
+                start_time=4.0,
+                end_time=6.0,
+                visual_description="[Visual: presenter stands in studio.]",
+                education_level="low",
+            ),
+        ])
+        db.commit()
+
+        exported = caption_service.get_visual_descriptions_vtt(
+            video.id,
+            db,
+            education_level="high",
+        )
+
+        assert exported is not None
+        assert "[Visual: electric field arrows point outward.]" in exported
+        assert "[Visual: presenter stands in studio.]" not in exported
+    finally:
+        db.close()
+
+
+def test_export_visual_descriptions_merges_adjacent_duplicate_cues():
+    db = SessionLocal()
+    try:
+        video = Video(youtube_id="merge111desc", title="Merged Description Demo")
+        db.add(video)
+        db.commit()
+        db.refresh(video)
+
+        repeated = "A labeled educational graphic showing a sphere covered with evenly distributed dots representing charges, illustrating electrostatic equilibrium."
+        presenter = "A presenter speaking in a studio setting with a green background and several hanging decorative light bulbs."
+
+        db.add_all([
+            Segment(
+                video_id=video.id,
+                start_time=15.249,
+                end_time=24.300,
+                visual_description=repeated,
+                education_level="high",
+            ),
+            Segment(
+                video_id=video.id,
+                start_time=24.310,
+                end_time=26.130,
+                visual_description=repeated,
+                education_level="high",
+            ),
+            Segment(
+                video_id=video.id,
+                start_time=26.140,
+                end_time=33.810,
+                visual_description=presenter,
+                education_level="low",
+            ),
+            Segment(
+                video_id=video.id,
+                start_time=33.820,
+                end_time=35.580,
+                visual_description=presenter,
+                education_level="low",
+            ),
+        ])
+        db.commit()
+
+        exported = caption_service.get_visual_descriptions_vtt(video.id, db)
+
+        assert exported is not None
+        cues = parse_vtt(exported)
+        assert len(cues) == 2
+        assert cues[0].start_time == 15.249
+        assert cues[0].end_time == 26.130
+        assert cues[0].text == repeated
+        assert cues[1].start_time == 26.140
+        assert cues[1].end_time == 35.580
+        assert cues[1].text == presenter
     finally:
         db.close()
 

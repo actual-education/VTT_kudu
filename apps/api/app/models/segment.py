@@ -21,6 +21,7 @@ class Segment(Base, IDMixin, TimestampMixin):
     has_equation = Column(Boolean, default=False)
 
     risk_level = Column(String)  # low, medium, high
+    education_level = Column(String, default="low")  # low, high
     risk_reason = Column(String)  # reason code
     review_status = Column(String, default="pending")  # pending, approved, rejected, edited
 

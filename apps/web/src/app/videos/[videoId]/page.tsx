@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -262,6 +263,12 @@ export default function VideoDetailPage() {
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  href={`/player/${videoId}`}
+                  className="px-3 py-1.5 text-xs bg-slate-900 text-white rounded hover:bg-slate-800"
+                >
+                  Interactive Player
+                </Link>
                 <a
                   href={api.exportOriginalVttUrl(videoId)}
                   download
@@ -274,7 +281,14 @@ export default function VideoDetailPage() {
                   download
                   className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
                 >
-                  Description VTT
+                  All Visual Descriptions
+                </a>
+                <a
+                  href={api.exportHighEducationVisualDescriptionsVttUrl(videoId)}
+                  download
+                  className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                >
+                  High Education Descriptions
                 </a>
                 <a
                   href={api.exportReportUrl(videoId)}

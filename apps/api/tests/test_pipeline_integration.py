@@ -149,6 +149,22 @@ class TestFullPipeline:
             if seg.ocr_text or seg.visual_description:
                 assert seg.ai_suggestion is not None
 
+    def test_visual_descriptions_receive_education_levels(self, db, video):
+        step_fetch_metadata(video, db)
+        step_download_captions(video, db)
+        step_enhance_captions(video, db)
+        frames = step_extract_frames(video, db)
+        analyses = step_analyze_frames_ocr(video, frames, db)
+        step_analyze_frames_vision(video, frames, analyses, db)
+        segments = step_align_segments(video, db)
+        step_score_risk(video, segments, db)
+        step_generate_descriptions(video, segments, db)
+
+        refreshed = db.query(Segment).filter(Segment.video_id == video.id).all()
+        with_visuals = [seg for seg in refreshed if seg.visual_description]
+        assert with_visuals
+        assert {seg.education_level for seg in with_visuals}.issubset({"low", "high"})
+
     def test_vision_step_reports_incremental_progress(self, db, video, monkeypatch):
         frames = [
             {"timestamp": 0.0, "path": "/tmp/frame1.jpg"},
@@ -221,6 +237,53 @@ class TestFullPipeline:
         assert progress_calls[-1] == (35, 35)
         refreshed = db.query(Segment).filter(Segment.video_id == video.id).all()
         assert all(seg.ai_suggestion for seg in refreshed)
+
+    def test_education_curation_dedupes_duplicates_and_marks_critical(self, db, video):
+        from app.services.description_service import description_service
+
+        first = Segment(
+            video_id=video.id,
+            start_time=0.0,
+            end_time=2.0,
+            transcript_text="Notice the graph of x squared.",
+            visual_description="A graph of x squared rises upward from the origin.",
+            has_diagram=True,
+            risk_level="medium",
+        )
+        second = Segment(
+            video_id=video.id,
+            start_time=2.0,
+            end_time=4.0,
+            transcript_text="The same graph remains on screen.",
+            visual_description="A graph of x squared rises upward from the origin.",
+            has_diagram=True,
+            risk_level="low",
+        )
+        third = Segment(
+            video_id=video.id,
+            start_time=4.0,
+            end_time=6.0,
+            transcript_text="The instructor continues speaking.",
+            visual_description="The instructor gestures with one hand while speaking.",
+            risk_level="low",
+        )
+        db.add_all([first, second, third])
+        db.commit()
+
+        updated = description_service.curate_education_levels(video.id, db)
+
+        assert updated == 3
+        refreshed = (
+            db.query(Segment)
+            .filter(Segment.video_id == video.id)
+            .order_by(Segment.start_time)
+            .all()
+        )
+        assert refreshed[0].education_level == "high"
+        assert refreshed[1].education_level == "low"
+        assert refreshed[1].visual_description is None
+        assert refreshed[2].education_level == "low"
+        assert refreshed[2].visual_description == "The instructor gestures with one hand while speaking."
 
 
 class TestPreUploadValidation:

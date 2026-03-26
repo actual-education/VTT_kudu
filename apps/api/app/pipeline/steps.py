@@ -76,6 +76,64 @@ def _merge_text_lines(first: str | None, second: str | None) -> str | None:
     return "\n".join(original for _, original in lines) if lines else None
 
 
+def _description_priority(text: str) -> tuple[int, int]:
+    lowered = text.lower()
+    educational_keywords = (
+        "diagram", "equation", "graph", "chart", "field", "charge", "capacitor",
+        "conductor", "plate", "arrow", "label", "formula", "cross-section",
+    )
+    generic_keywords = (
+        "presenter", "person speaking", "talking-head", "studio setting",
+        "green wall", "hanging light", "shelves", "background",
+    )
+    educational_score = sum(1 for word in educational_keywords if word in lowered)
+    generic_penalty = sum(1 for word in generic_keywords if word in lowered)
+    return (educational_score - generic_penalty, -len(text))
+
+
+def _compact_visual_descriptions(descriptions: list[str]) -> str | None:
+    """Collapse multiple frame-level descriptions into one concise segment description."""
+    candidates: list[str] = []
+    for description in descriptions:
+        for line in description.splitlines():
+            cleaned = re.sub(r"\s+", " ", line).strip()
+            if cleaned:
+                candidates.append(cleaned)
+
+    if not candidates:
+        return None
+
+    selected: list[str] = []
+    selected_signatures: list[set[str]] = []
+    for candidate in sorted(candidates, key=_description_priority, reverse=True):
+        signature = _normalize_visual_text(candidate)
+        if any(_text_similarity(candidate, existing) >= 0.72 for existing in selected):
+            continue
+        if signature and any(len(signature & existing) / len(signature | existing) >= 0.72 for existing in selected_signatures if (signature | existing)):
+            continue
+        selected.append(candidate)
+        if signature:
+            selected_signatures.append(signature)
+        if len(selected) >= 1:
+            break
+
+    if not selected:
+        return None
+
+    compact = selected[0]
+    sentences = re.split(r"(?<=[.!?])\s+", compact)
+    if len(sentences) > 1:
+        non_generic = [
+            sentence for sentence in sentences
+            if "talking-head" not in sentence.lower()
+            and "presenter rather than" not in sentence.lower()
+            and "without on-screen" not in sentence.lower()
+        ]
+        if non_generic:
+            compact = non_generic[0].strip()
+    return compact.strip() or None
+
+
 def _has_visual_context(segment: Segment) -> bool:
     return bool(
         segment.has_text
@@ -230,7 +288,7 @@ def step_align_segments(video: Video, db: Session) -> list[Segment]:
             end_time=cue.end_time,
             transcript_text=cue.text,
             ocr_text="\n".join(ocr_texts) if ocr_texts else None,
-            visual_description="\n".join(descriptions) if descriptions else None,
+            visual_description=_compact_visual_descriptions(descriptions),
             has_text=has_text,
             has_diagram=has_diagram,
             has_equation=has_equation,
@@ -269,8 +327,9 @@ def step_score_risk(video: Video, segments: list[Segment], db: Session) -> None:
 
 
 def step_generate_descriptions(video: Video, segments: list[Segment], db: Session) -> None:
-    """Step 9: Generate AI descriptions for high/medium risk segments and create caption draft."""
+    """Step 9: Generate AI descriptions, then curate educational visual-description levels."""
     description_service.generate_for_video(video.id, db)
+    description_service.curate_education_levels(video.id, db)
     description_service.generate_caption_draft(video.id, db)
     # Re-score after suggestions so risks reflect assisted narration coverage.
     risk_service.assess_video_segments(video.id, db)

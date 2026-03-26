@@ -75,6 +75,28 @@ def export_visual_descriptions_vtt(video_id: str, db: Session = Depends(get_db))
     )
 
 
+@router.get("/vtt/descriptions/high")
+def export_high_education_visual_descriptions_vtt(video_id: str, db: Session = Depends(get_db)):
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    vtt = caption_service.get_visual_descriptions_vtt(video_id, db, education_level="high")
+    if not vtt:
+        raise HTTPException(
+            status_code=404,
+            detail="No high education-level visual description captions available",
+        )
+
+    return PlainTextResponse(
+        vtt,
+        media_type="text/vtt",
+        headers={
+            "Content-Disposition": f'attachment; filename="{video.youtube_id}_high_education_visual_descriptions.vtt"'
+        },
+    )
+
+
 @router.get("/report")
 def export_report(video_id: str, db: Session = Depends(get_db)):
     video = db.query(Video).filter(Video.id == video_id).first()
@@ -97,9 +119,11 @@ def export_report(video_id: str, db: Session = Depends(get_db)):
                 "start_time": seg.start_time,
                 "end_time": seg.end_time,
                 "risk_level": seg.risk_level,
+                "education_level": seg.education_level,
                 "risk_reason": seg.risk_reason,
                 "transcript_text": seg.transcript_text,
                 "ocr_text": seg.ocr_text,
+                "visual_description": seg.visual_description,
                 "ai_suggestion": seg.ai_suggestion,
                 "review_status": seg.review_status,
             })

@@ -6,6 +6,7 @@ interface VideoPlayerProps {
   youtubeId: string;
   onReady?: (player: YT.Player) => void;
   onStateChange?: (event: YT.OnStateChangeEvent) => void;
+  className?: string;
 }
 
 let apiLoaded = false;
@@ -34,7 +35,12 @@ function loadYouTubeAPI(): Promise<void> {
   });
 }
 
-export function VideoPlayer({ youtubeId, onReady, onStateChange }: VideoPlayerProps) {
+export function VideoPlayer({
+  youtubeId,
+  onReady,
+  onStateChange,
+  className,
+}: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YT.Player | null>(null);
 
@@ -74,7 +80,9 @@ export function VideoPlayer({ youtubeId, onReady, onStateChange }: VideoPlayerPr
   return (
     <div
       ref={containerRef}
-      className="w-full aspect-video bg-black rounded-lg overflow-hidden"
+      className={`w-full aspect-video bg-black rounded-lg overflow-hidden ${
+        className ?? ""
+      }`}
     />
   );
 }

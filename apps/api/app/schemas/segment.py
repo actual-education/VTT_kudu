@@ -15,6 +15,7 @@ class SegmentResponse(BaseModel):
     has_diagram: bool
     has_equation: bool
     risk_level: Optional[str] = None
+    education_level: Optional[str] = None
     risk_reason: Optional[str] = None
     review_status: str
 

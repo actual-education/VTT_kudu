@@ -4,7 +4,7 @@ import logging
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import engine
+from app.database import engine, ensure_schema_compat
 from app.config import settings
 from app.auth import require_authenticated
 from app.models.base import Base
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_schema_compat()
     set_pipeline_runner(run_pipeline)
     logger.info("AVCE API starting with USE_MOCKS=%s", settings.USE_MOCKS)
     await start_workers(num_workers=2)

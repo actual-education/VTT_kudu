@@ -10,6 +10,7 @@ from app.utils.srt_parser import parse_srt
 
 class CaptionService:
     _MICRO_CUE_MAX_DURATION_SECONDS = 0.12
+    _VISUAL_DESCRIPTION_MERGE_GAP_SECONDS = 0.25
 
     def ingest(self, content: str, video_id: str, db: Session) -> CaptionVersion:
         """Parse raw caption content (VTT or SRT) and store as raw_auto version."""
@@ -154,18 +155,27 @@ class CaptionService:
         latest = self.get_latest_vtt(video_id, db)
         return self._dedupe_progressive_vtt(latest) if latest else None
 
-    def get_visual_descriptions_vtt(self, video_id: str, db: Session) -> str | None:
+    def get_visual_descriptions_vtt(
+        self,
+        video_id: str,
+        db: Session,
+        education_level: str | None = None,
+    ) -> str | None:
         from app.models.segment import Segment
 
-        segments = (
+        query = (
             db.query(Segment)
             .filter(
                 Segment.video_id == video_id,
-                Segment.ai_suggestion.isnot(None),
+                Segment.visual_description.isnot(None),
             )
-            .order_by(Segment.start_time)
-            .all()
         )
+        segments = query.order_by(Segment.start_time).all()
+        if education_level:
+            segments = [
+                segment for segment in segments
+                if self._matches_visual_education_level(segment, education_level)
+            ]
         if not segments:
             return None
 
@@ -173,13 +183,14 @@ class CaptionService:
             VttCue(
                 start_time=segment.start_time,
                 end_time=segment.end_time,
-                text=segment.ai_suggestion.strip(),
+                text=segment.visual_description.strip(),
             )
             for segment in segments
-            if (segment.ai_suggestion or "").strip()
+            if (segment.visual_description or "").strip()
         ]
         if not cues:
             return None
+        cues = self._merge_adjacent_visual_description_cues(cues)
         return generate_vtt(cues)
 
     def get_versions(self, video_id: str, db: Session) -> list[CaptionVersion]:
@@ -237,6 +248,67 @@ class CaptionService:
     def _normalize_caption_text(self, text: str) -> str:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         return "\n".join(lines).strip()
+
+    def _matches_visual_education_level(self, segment, education_level: str) -> bool:
+        stored_level = (getattr(segment, "education_level", None) or "").lower()
+        if education_level != "high":
+            return stored_level == education_level
+
+        if stored_level == "high":
+            return True
+
+        text = self._normalize_caption_text(getattr(segment, "visual_description", "") or "").lower()
+        if not text:
+            return False
+
+        strong_keywords = {
+            "educational graphic", "diagram", "equation", "formula", "graph", "chart",
+            "field", "charge", "capacitor", "conductor", "cross-section", "labeled",
+            "label", "arrow", "plate", "surface", "+q", "-q",
+        }
+        filler_markers = {
+            "studio", "shelves", "green background", "green wall", "light bulbs",
+            "decorative", "presenter speaking", "speaking directly to the camera",
+            "presenter stands", "presenter sits", "person speaking directly",
+        }
+
+        strong_match = any(keyword in text for keyword in strong_keywords)
+        filler_only = any(marker in text for marker in filler_markers) and not strong_match
+        return strong_match and not filler_only
+
+    def _merge_adjacent_visual_description_cues(self, cues: list[VttCue]) -> list[VttCue]:
+        if not cues:
+            return []
+
+        merged: list[VttCue] = []
+        for cue in cues:
+            text = self._normalize_caption_text(cue.text)
+            if not text:
+                continue
+
+            current = VttCue(
+                start_time=cue.start_time,
+                end_time=cue.end_time,
+                text=text,
+                identifier=cue.identifier,
+            )
+
+            if not merged:
+                merged.append(current)
+                continue
+
+            previous = merged[-1]
+            gap = current.start_time - previous.end_time
+            if (
+                previous.text == current.text
+                and gap <= self._VISUAL_DESCRIPTION_MERGE_GAP_SECONDS
+            ):
+                previous.end_time = max(previous.end_time, current.end_time)
+                continue
+
+            merged.append(current)
+
+        return merged
 
     def _is_micro_duplicate(self, previous_text: str, current_text: str, duration: float) -> bool:
         if duration > self._MICRO_CUE_MAX_DURATION_SECONDS:
