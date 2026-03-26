@@ -1,6 +1,6 @@
 # AVCE - ADA Visual Compliance Engine
 
-A web application that analyzes YouTube educational videos for **ADA/WCAG 2.1 AA** compliance. AVCE generates WebVTT captions, detects visual content not described in audio, flags segments for human review, and produces compliance scores.
+A web application that analyzes YouTube educational videos for **ADA/WCAG 2.1 AA** compliance. AVCE generates WebVTT captions, detects visual content not described in audio, flags segments for human review, produces compliance scores, and now ships an interactive visual-description player plus curated educational visual-description subtitle exports.
 
 Built as a UCLA proof-of-concept for 20 videos, designed for future SaaS scalability.
 
@@ -22,6 +22,8 @@ infra/
 - SQLite with `check_same_thread=False` — SQLAlchemy makes PostgreSQL migration trivial
 - Caption versioning — every mutation creates a new `CaptionVersion` row
 - Next.js rewrites `/api/*` to FastAPI at `localhost:8000`
+- Segments now store both `risk_level` and `education_level`
+- Visual descriptions are compacted, deduplicated, and curated after scanning
 
 ## Quick Start
 
@@ -103,7 +105,24 @@ source .venv/bin/activate
 pytest tests/ -v
 ```
 
-46 tests covering VTT/SRT parsing, risk scoring, compliance calculation, full pipeline integration, and pre-upload validation.
+Tests cover VTT/SRT parsing, risk scoring, compliance calculation, caption export behavior, full pipeline integration, and pre-upload validation.
+
+## Recent Features
+
+- Interactive player route at `/player/[videoId]` with:
+  - visual-description overlay
+  - right-column description panel
+  - `All`, `Educational`, and `Off` display modes
+  - optional pause-on-cue playback behavior
+- Education-level curation pass after description generation:
+  - AI reviews `transcript_text` plus `visual_description` as a whole
+  - segments receive `education_level = high | low`
+  - duplicate visual descriptions are removed
+  - obvious instructional graphics are promoted to `high` even if the model under-classifies them
+- Curated visual-description exports:
+  - all visual descriptions
+  - only high education-level visual descriptions
+- Adjacent duplicate visual-description cues are merged in exports and in the interactive player
 
 ## 11-Step Analysis Pipeline
 
@@ -119,9 +138,19 @@ When you submit a scan job, the pipeline runs these steps:
 | 6 | `analyze_frames_vision` | Classify visual content (text, diagrams, equations) |
 | 7 | `align_segments` | Align captions with frame analyses into segments |
 | 8 | `score_risk` | Assign risk levels by comparing transcript vs visual content |
-| 9 | `generate_descriptions` | Generate AI audio descriptions for flagged segments |
+| 9 | `generate_descriptions` | Generate AI audio descriptions, compact visual descriptions, and curate `education_level` |
 | 10 | `compute_compliance` | Calculate weighted compliance score |
 | 11 | `finalize` | Mark video as scanned |
+
+### Visual Description Curation
+
+After segments are aligned and descriptions are generated, AVCE runs a second pass over the segment timeline to:
+
+- review visual descriptions together with transcript context
+- assign `education_level`
+- remove duplicate or near-duplicate visual descriptions
+- keep presenter/studio ambience low priority
+- preserve diagrams, equations, labeled graphics, charts, and other instructional visuals as high-priority educational cues
 
 ## Risk Engine
 
@@ -190,6 +219,9 @@ Weighted score with 5 components:
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/videos/{id}/export/vtt` | Download VTT file |
+| `GET` | `/videos/{id}/export/vtt/original` | Download original/raw caption VTT |
+| `GET` | `/videos/{id}/export/vtt/descriptions` | Download all curated visual-description subtitles |
+| `GET` | `/videos/{id}/export/vtt/descriptions/high` | Download only high education-level visual-description subtitles |
 | `GET` | `/videos/{id}/export/report` | Download JSON compliance report |
 | `GET` | `/videos/{id}/export/validate` | Pre-upload validation check |
 | `POST` | `/videos/{id}/export/upload` | Upload captions to YouTube |
@@ -201,6 +233,7 @@ Weighted score with 5 components:
 | `/` | Dashboard — paste YouTube URL to import |
 | `/videos` | Video list — status, scores, scan/batch buttons |
 | `/videos/[id]` | Review page — split layout with video player, cue timeline, segment editor, and review panel |
+| `/player/[id]` | Interactive player — standalone viewing mode for curated visual descriptions |
 
 ## Project Structure
 
@@ -222,14 +255,14 @@ apps/api/
 
 apps/web/
   src/
-    app/                 3 pages (dashboard, video list, video detail)
+    app/                 Dashboard, video list, review page, interactive player
     components/
       layout/            AppShell, Header, Sidebar
-      video/             VideoPlayer (YouTube IFrame API)
+      video/             VideoPlayer, VisualDescriptionOverlay, PlayerControls
       caption/           CueTimeline, CueList, CueEditor, VersionSelector
       review/            ReviewPanel, SuggestionCard, RiskBadge, ComplianceScore
       job/               BatchSubmitForm
-    hooks/               useVideoPlayer, useJobPolling, useCueSync
+    hooks/               useVideoPlayer, useJobPolling, useCueSync, useVisualDescriptionSync, usePauseOnCue
     lib/                 Typed API client
 
 packages/shared/
@@ -261,6 +294,10 @@ AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_DEPLOYMENT=
 AZURE_OPENAI_API_VERSION=2024-10-21
+
+# Optional tuning
+DESCRIPTION_MODEL_MAX_SEGMENTS=30
+EDUCATION_MODEL_MAX_SEGMENTS=120
 
 # Required for /export/upload in real mode
 GOOGLE_CLIENT_ID=
